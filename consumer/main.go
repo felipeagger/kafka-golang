@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
@@ -24,11 +26,12 @@ func init() {
 		"bootstrap.servers":  fmt.Sprintf("%s:%s", brokerIP, brokerPort),
 		"group.id":           group,
 		"auto.offset.reset":  "earliest",
+		"isolation.level":    "read_committed",
+		"enable.auto.commit": false,
 		"session.timeout.ms": 10000,
 	}
 
 	var err error
-	fmt.Println("Initializing consumer...")
 	consumer, err = kafka.NewConsumer(&config)
 
 	if err != nil {
@@ -37,6 +40,8 @@ func init() {
 }
 
 func main() {
+	fmt.Printf("Initializing Consumer...\nConsumerGroup: %v \nTopic: %v\n",
+		group, topic)
 
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
@@ -66,7 +71,7 @@ func consume(sigchan chan os.Signal) {
 			case *kafka.Message:
 
 				waitGrp.Add(1)
-				go processMsg(event.Value, event.Key, event.Headers, event.TopicPartition)
+				go processMsg(event)
 
 			case kafka.Error:
 				fmt.Fprintf(os.Stderr, "%% Error: %v: %v\n", event.Code(), event)
@@ -84,12 +89,25 @@ func consume(sigchan chan os.Signal) {
 	consumer.Close()
 }
 
-func processMsg(value, key []byte, headers []kafka.Header, topic kafka.TopicPartition) {
+func processMsg(event *kafka.Message) {
 	defer waitGrp.Done()
 
-	data := string(value)
+	//event.Value, event.Key, event.Headers, event.TopicPartition
+	data := string(event.Value)
 
-	//if generate an error here?
+	var err error
 
-	fmt.Printf("Msg %v on topic %s\n", data, topic)
+	random := uint64(rand.Intn(10))
+	if random > 7 {
+		err = errors.New("Falhou")
+	}
+
+	if err != nil {
+		fmt.Printf("Error on process Msg %s: %v\n", event.TopicPartition.Offset, data)
+		return
+	}
+
+	consumer.CommitMessage(event)
+
+	fmt.Printf("Msg %v on OffSet: %s\n", data, event.TopicPartition.Offset)
 }

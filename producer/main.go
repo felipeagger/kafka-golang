@@ -16,7 +16,10 @@ var (
 
 func init() {
 	config := kafka.ConfigMap{
-		"bootstrap.servers": fmt.Sprintf("%s:%s", brokerIP, brokerPort),
+		"bootstrap.servers":  fmt.Sprintf("%s:%s", brokerIP, brokerPort),
+		"enable.idempotence": true,
+		"acks":               "all",
+		"retries":            10,
 	}
 
 	var err error
@@ -34,7 +37,7 @@ func main() {
 
 	go listenEvents(termChan, doneChan, producer)
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 10; i++ {
 		sendMessage(fmt.Sprintf("kafka with Golang - %v", i))
 	}
 
