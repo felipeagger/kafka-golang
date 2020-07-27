@@ -1,0 +1,19 @@
+version: '3'
+
+networks:
+  kafka-golang_default:
+    external: true
+
+services:
+
+  consumer:
+    container_name: go-consumer
+    build: '.'
+    environment:
+      TOPIC: events
+      BROKER_SRV: broker
+      BROKER_PORT: 9092
+      GROUP: consumers
+    networks:
+      - kafka-golang_default
+    restart: always
