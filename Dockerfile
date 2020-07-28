@@ -1,11 +1,11 @@
-FROM golang:1.13-alpine as builder
+FROM golang:1.14-alpine as builder
 ENV GOPATH="$HOME/go"
-RUN apk --no-cache add git
+RUN apk --no-cache add git gcc g++ make
 WORKDIR $GOPATH/src
 
 COPY . $GOPATH/src
 
-RUN go get -d -v golang.org/x/net/html
+RUN CGO_ENABLED=0 go get -u gopkg.in/confluentinc/confluent-kafka-go.v1/kafka
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o app consumer/*.go
 
 

@@ -9,25 +9,28 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/aws/aws-sdk-go/service/sqs"
+	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
 )
 
 var (
-	topic      string = os.Getenv("TOPIC")
-	group      string = os.Getenv("GROUP")
-	brokerIP   string = os.Getenv("BROKER_SRV")
-	brokerPort string = os.Getenv("BROKER_PORT")
-	consumer   *kafka.Consumer
-	waitGrp    sync.WaitGroup
+	topic         string = os.Getenv("TOPIC")
+	group         string = os.Getenv("GROUP")
+	brokerIP      string = os.Getenv("BROKER_SRV")
+	brokerPort    string = os.Getenv("BROKER_PORT")
+	deadQueueName string
+	waitGrp       sync.WaitGroup
+	consumer      *kafka.Consumer
+	sqsClient     *sqs.SQS
 )
 
 func init() {
 	config := kafka.ConfigMap{
-		"bootstrap.servers":  fmt.Sprintf("%s:%s", brokerIP, brokerPort),
-		"group.id":           group,
-		"auto.offset.reset":  "earliest",
-		"isolation.level":    "read_committed",
-		"enable.auto.commit": false,
+		"bootstrap.servers": fmt.Sprintf("%s:%s", brokerIP, brokerPort),
+		"group.id":          group,
+		"auto.offset.reset": "earliest",
+		//"isolation.level":    "read_committed",
+		//"enable.auto.commit": false,
 		"session.timeout.ms": 10000,
 	}
 
@@ -45,11 +48,13 @@ func main() {
 
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
+	chanend := make(chan bool)
 
-	consume(sigchan)
+	go consumeDLQ(chanend)
+	consume(sigchan, chanend)
 }
 
-func consume(sigchan chan os.Signal) {
+func consume(sigchan chan os.Signal, chanend chan bool) {
 
 	consumer.SubscribeTopics([]string{topic}, nil)
 
@@ -57,7 +62,8 @@ func consume(sigchan chan os.Signal) {
 	for run {
 		select {
 		case sig := <-sigchan:
-			fmt.Printf("Caught signal %v: terminating\n", sig)
+			fmt.Printf("\nCaught signal %v: terminating\n", sig)
+			chanend <- true
 			run = false
 
 		default:
@@ -74,12 +80,12 @@ func consume(sigchan chan os.Signal) {
 				go processMsg(event)
 
 			case kafka.Error:
-				fmt.Fprintf(os.Stderr, "%% Error: %v: %v\n", event.Code(), event)
+				fmt.Fprintf(os.Stderr, "\n%% Error: %v: %v\n", event.Code(), event)
 				if event.Code() == kafka.ErrAllBrokersDown {
 					run = false
 				}
 			default:
-				fmt.Printf("Ignored %v\n", event)
+				fmt.Printf("\nIgnored %v\n", event)
 			}
 
 		}
@@ -97,17 +103,15 @@ func processMsg(event *kafka.Message) {
 
 	var err error
 
-	random := uint64(rand.Intn(10))
-	if random > 7 {
+	if uint64(rand.Intn(10)) > 7 {
 		err = errors.New("Falhou")
 	}
 
 	if err != nil {
-		fmt.Printf("Error on process Msg %s: %v\n", event.TopicPartition.Offset, data)
+		fmt.Printf("Sending Msg to DLQ %s: %v\n", event.TopicPartition.Offset, data)
+		sendMessage(data)
 		return
 	}
-
-	consumer.CommitMessage(event)
 
 	fmt.Printf("Msg %v on OffSet: %s\n", data, event.TopicPartition.Offset)
 }

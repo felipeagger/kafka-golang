@@ -16,10 +16,10 @@ var (
 
 func init() {
 	config := kafka.ConfigMap{
-		"bootstrap.servers":  fmt.Sprintf("%s:%s", brokerIP, brokerPort),
-		"enable.idempotence": true,
-		"acks":               "all",
-		"retries":            10,
+		"bootstrap.servers": fmt.Sprintf("%s:%s", brokerIP, brokerPort),
+		//"enable.idempotence": true,
+		//"acks":               "all",
+		"retries": 10,
 	}
 
 	var err error

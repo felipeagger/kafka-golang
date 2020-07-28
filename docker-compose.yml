@@ -6,14 +6,24 @@ networks:
 
 services:
 
-  consumer:
-    container_name: go-consumer
-    build: '.'
+  sqs:
+    image: localstack/localstack
+    ports:
+      - "4576:4576"
+      - "8080:8080"
     environment:
-      TOPIC: events
-      BROKER_SRV: broker
-      BROKER_PORT: 9092
-      GROUP: consumers
-    networks:
-      - kafka-golang_default
-    restart: always
+      - SERVICES=sqs
+
+#  consumer:
+#    container_name: go-consumer
+#    build: '.'
+#    environment:
+#      TOPIC: events
+#      BROKER_SRV: broker
+#      BROKER_PORT: 9092
+#      GROUP: consumers
+#    depends_on:
+#    - sqs
+#    networks:
+#      - kafka-golang_default
+#    restart: always
