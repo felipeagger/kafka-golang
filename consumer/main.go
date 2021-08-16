@@ -1,33 +1,39 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
 )
 
 var (
-	topic         string = os.Getenv("TOPIC")
-	group         string = os.Getenv("GROUP")
-	brokerIP      string = os.Getenv("BROKER_SRV")
-	brokerPort    string = os.Getenv("BROKER_PORT")
-	deadQueueName string
-	waitGrp       sync.WaitGroup
-	consumer      *kafka.Consumer
-	sqsClient     *sqs.SQS
+	TOPIC      string = os.Getenv("TOPIC")
+	GROUP      string = os.Getenv("GROUP")
+	BROKERS    string = os.Getenv("BROKERS")
+	LOCALSTACK string = os.Getenv("LOCALSTACK")
+	DEADQUEUE  string // Automatic set on utils
+	waitGrp    sync.WaitGroup
+	consumer   *kafka.Consumer
+	sqsClient  *sqs.Client
 )
 
 func init() {
+	if BROKERS == "" {
+		panic("Missing environment variable: BROKERS")
+	}
+
+	if TOPIC == "" {
+		panic("Missing environment variable: TOPIC")
+	}
+
 	config := kafka.ConfigMap{
-		"bootstrap.servers": fmt.Sprintf("%s:%s", brokerIP, brokerPort),
-		"group.id":          group,
+		"bootstrap.servers": BROKERS,
+		"group.id":          GROUP,
 		"auto.offset.reset": "earliest",
 		//"isolation.level":    "read_committed",
 		//"enable.auto.commit": false,
@@ -43,20 +49,19 @@ func init() {
 }
 
 func main() {
-	fmt.Printf("Initializing Consumer...\nConsumerGroup: %v \nTopic: %v\n",
-		group, topic)
+	fmt.Printf("Initializing Consumer...\nConsumerGroup: %v \nTopic: %v\n", GROUP, TOPIC)
 
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 	chanend := make(chan bool)
 
-	go consumeDLQ(chanend)
+	//go consumeDLQ(chanend)
 	consume(sigchan, chanend)
 }
 
 func consume(sigchan chan os.Signal, chanend chan bool) {
 
-	consumer.SubscribeTopics([]string{topic}, nil)
+	consumer.SubscribeTopics([]string{TOPIC}, nil)
 
 	run := true
 	for run {
@@ -98,14 +103,14 @@ func consume(sigchan chan os.Signal, chanend chan bool) {
 func processMsg(event *kafka.Message) {
 	defer waitGrp.Done()
 
-	//event.Value, event.Key, event.Headers, event.TopicPartition
+	fmt.Printf("Timestamp: %v\n Offset: %v\n eventHeaders: %v\n eventKey: %v\n", event.Timestamp, event.TopicPartition.Offset, event.Headers, event.Key)
+
 	data := string(event.Value)
 
 	var err error
-
-	if uint64(rand.Intn(10)) > 7 {
-		err = errors.New("Falhou")
-	}
+	//if uint64(rand.Intn(10)) > 7 {
+	//	err = errors.New("Falhou")
+	//}
 
 	if err != nil {
 		fmt.Printf("Sending Msg to DLQ %s: %v\n", event.TopicPartition.Offset, data)

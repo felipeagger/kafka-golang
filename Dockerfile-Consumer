@@ -1,0 +1,15 @@
+FROM golang:1.15-alpine as builder
+ENV GOPATH="$HOME/go"
+RUN apk --no-cache add git gcc g++ make librdkafka-dev pkgconf
+WORKDIR $HOME/app
+
+COPY . .
+
+RUN GOOS=linux go build -tags musl -a -o bin consumer/*.go
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+
+COPY --from=builder $HOME/app/bin .
+CMD ["./bin"]  

@@ -1,29 +1,114 @@
 version: '3'
 
+## execute: docker network create global-default
 networks:
-  kafka-golang_default:
+  global-default:
     external: true
 
 services:
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: kafka-zookeeper
+    networks:
+      - global-default
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka1:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka1
+    networks:
+      - global-default
+    depends_on:
+      - zookeeper
+    ports:
+      - 1909:1909
+      - 19092:19092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      #KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:19092,PLAINTEXT_HOST://localhost:1909
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      #KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  kafka2:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka2
+    networks:
+      - global-default
+    ports:
+      - 2909:2909
+      - 29092:29092
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      #KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:29092,PLAINTEXT_HOST://localhost:2909
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      #KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  kowl:
+    image: quay.io/cloudhut/kowl:master
+    container_name: kafka-kowl
+    restart: on-failure
+    networks:
+      - global-default
+    ports:
+      - 8088:8080
+    depends_on:
+      - kafka1
+      - kafka2
+    volumes:
+    - ./config.yaml:/etc/kowl/config.yaml
+    entrypoint: ./kowl --config.filepath=/etc/kowl/config.yaml
+
   sqs:
     image: localstack/localstack
+    container_name: localstack-sqs
     ports:
       - "4576:4576"
-      - "8080:8080"
+      - "8087:8080"
     environment:
       - SERVICES=sqs
 
-#  consumer:
-#    container_name: go-consumer
-#    build: '.'
-#    environment:
-#      TOPIC: events
-#      BROKER_SRV: broker
-#      BROKER_PORT: 9092
-#      GROUP: consumers
-#    depends_on:
-#    - sqs
-#    networks:
-#      - kafka-golang_default
-#    restart: always
+  producer:
+    container_name: go-producer
+    build:
+      context: '.'
+      dockerfile: './Dockerfile-Producer'
+    environment:
+      TOPIC: events
+      BROKERS: kafka1:19092,kafka2:29092
+    depends_on:
+      - zookeeper
+      - kafka1
+      - kafka2
+      - sqs
+    networks:
+      - global-default
+
+  consumer:
+    container_name: go-consumer
+    build:
+      context: '.'
+      dockerfile: './Dockerfile-Consumer'
+    environment:
+      TOPIC: events
+      GROUP: ConsumerGrpDocker
+      BROKERS: kafka1:19092,kafka2:29092
+      LOCALSTACK: http://sqs:4576
+    depends_on:
+      - zookeeper
+      - kafka1
+      - kafka2
+      - sqs
+    networks:
+      - global-default
+    restart: always

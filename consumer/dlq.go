@@ -1,14 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
 var waitGrpDlq sync.WaitGroup
@@ -25,10 +27,10 @@ func consumeDLQ(chanend chan bool) {
 
 		case <-ticker:
 
-			output, err := sqsClient.ReceiveMessage(&sqs.ReceiveMessageInput{
-				QueueUrl:            aws.String(deadQueueName),
-				MaxNumberOfMessages: aws.Int64(10),
-				VisibilityTimeout:   aws.Int64(30),
+			output, err := sqsClient.ReceiveMessage(context.TODO(), &sqs.ReceiveMessageInput{
+				QueueUrl: aws.String(DEADQUEUE),
+				//MaxNumberOfMessages: aws.Int32(10),
+				//VisibilityTimeout:   aws.Int32(30),
 			})
 
 			if err != nil {
@@ -47,7 +49,7 @@ func consumeDLQ(chanend chan bool) {
 
 }
 
-func processDlqMsg(msg *sqs.Message) {
+func processDlqMsg(msg types.Message) {
 	defer waitGrpDlq.Done()
 	var err error
 

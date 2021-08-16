@@ -4,19 +4,27 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 var (
-	topic      string = os.Getenv("TOPIC")
-	brokerIP   string = os.Getenv("BROKER_SRV")
-	brokerPort string = os.Getenv("BROKER_PORT")
-	producer   *kafka.Producer
+	TOPIC    string = os.Getenv("TOPIC")
+	BROKERS  string = os.Getenv("BROKERS")
+	producer *kafka.Producer
 )
 
 func init() {
+
+	if BROKERS == "" {
+		panic("Missing environment variable: BROKERS")
+	}
+
+	if TOPIC == "" {
+		panic("Missing environment variable: TOPIC")
+	}
+
 	config := kafka.ConfigMap{
-		"bootstrap.servers": fmt.Sprintf("%s:%s", brokerIP, brokerPort),
+		"bootstrap.servers": BROKERS,
 		//"enable.idempotence": true,
 		//"acks":               "all",
 		"retries": 10,
@@ -38,21 +46,31 @@ func main() {
 	go listenEvents(termChan, doneChan, producer)
 
 	for i := 0; i < 10; i++ {
-		sendMessage(fmt.Sprintf("kafka with Golang - %v", i))
+		msg := fmt.Sprintf(`{"msg": "kafka with Golang - %v"}`, i)
+
+		sendMessage(fmt.Sprintf("msg%v", i), msg)
 	}
 
 	closeProducer(producer, termChan, doneChan)
 
 }
 
-func sendMessage(data string) {
+func sendMessage(key, data string) {
+
+	var headers []kafka.Header
+	headers = append(headers, kafka.Header{
+		Key:   "origin",
+		Value: []byte("producer"),
+	})
 
 	message := kafka.Message{
 		TopicPartition: kafka.TopicPartition{
-			Topic:     &topic,
+			Topic:     &TOPIC,
 			Partition: kafka.PartitionAny,
 		},
-		Value: []byte(data),
+		Headers: headers,
+		Key:     []byte(key),
+		Value:   []byte(data),
 	}
 
 	if err := producer.Produce(&message, nil); err != nil {

@@ -12,24 +12,21 @@ help:
 	@echo "       Remove app from docker with docker-compose down"
 	@echo ""
 
+build:
+	@docker build -t kafkago-producer:latest -f ./Dockerfile-Producer .
+	@docker build -t kafkago-consumer:latest -f ./Dockerfile-Consumer .
+
 docker:
 	@echo "---- Building & Up Container ----"
-	@docker-compose -f compose-kafka.yml down
-	@docker-compose -f compose-kafka.yml up -d
-	@sleep 3
 	@docker-compose down
-	@docker-compose build	
-	@docker-compose up -d
-	@sleep 3
-	@echo "---- EndPoints ----"
-	@echo "---- Consumer API - http://127.0.0.1:8084/index ----"
+	@docker-compose up -d --build
 
 dockerdown:
 	@docker-compose down
 	@docker-compose -f compose-kafka.yml down
 
 run:
-	@export BROKER_SRV=localhost
-	@export BROKER_PORT=9092
-	@export TOPIC=events
-	@go run producer/main.go
+	@echo "Run: export BROKERS=localhost:1909,localhost:2909"
+	@echo "Run: export TOPIC=events"
+	@echo "Run: export GROUP=Consumers"
+	@go run producer/*.go & go run consumer/*.go

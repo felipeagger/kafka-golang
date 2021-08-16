@@ -1,55 +1,99 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
 func init() {
+	return
 
-	config := &aws.Config{
-		Region:      aws.String("sa-east-1"),
-		Credentials: credentials.NewSharedCredentials("", "default"),
-		Endpoint:    aws.String("http://localhost:4576"),
+	if LOCALSTACK == "" {
+		LOCALSTACK = "http://localhost:4576"
 	}
 
-	sess := session.Must(session.NewSession(config))
-	sqsClient = sqs.New(sess)
+	// config := &aws.Config{
+	// 	Region: aws.String("sa-east-1"),
+	// 	//Credentials: credentials.NewSharedCredentials("", "default"),
+	// 	Endpoint: aws.String(LOCALSTACK),
+	// }
 
-	createQueue("sqs-events-dlq")
+	// sess := session.Must(session.NewSession(config))
+	// sqsClient = sqs.New(sess)
+
+	client, err := NewSQSClient(LOCALSTACK, "us-east-1")
+	if err != nil {
+		panic(err)
+	}
+
+	sqsClient = client
+
+	createQueue("sqs-events-dlq", "15", "86400")
 	fmt.Println("AWS Session initialized...")
 }
 
-func createQueue(name string) {
+func NewSQSClient(awsEndpoint, awsRegion string) (*sqs.Client, error) {
 
-	queue, err := sqsClient.GetQueueUrl(&sqs.GetQueueUrlInput{
+	customResolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+		if awsEndpoint != "" {
+			return aws.Endpoint{
+				PartitionID:   "aws",
+				URL:           awsEndpoint,
+				SigningRegion: awsRegion,
+			}, nil
+		}
+
+		return aws.Endpoint{}, &aws.EndpointNotFoundError{}
+	})
+
+	awsCfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(awsRegion),
+		config.WithEndpointResolver(customResolver),
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	client := sqs.NewFromConfig(awsCfg)
+
+	return client, nil
+}
+
+func createQueue(name, delay, retentionPeriod string) {
+
+	queue, err := sqsClient.GetQueueUrl(context.TODO(), &sqs.GetQueueUrlInput{
 		QueueName: aws.String(name),
 	})
 
 	if err != nil {
-		result, _ := sqsClient.CreateQueue(&sqs.CreateQueueInput{
+		result, err := sqsClient.CreateQueue(context.TODO(), &sqs.CreateQueueInput{
 			QueueName: aws.String(name),
-			Attributes: map[string]*string{
-				"DelaySeconds":           aws.String("15"),
-				"MessageRetentionPeriod": aws.String("86400"),
+			Attributes: map[string]string{
+				"DelaySeconds":           delay,
+				"MessageRetentionPeriod": retentionPeriod,
 			},
 		})
 
-		deadQueueName = *result.QueueUrl
+		if err != nil {
+			panic(err)
+		}
+
+		DEADQUEUE = *result.QueueUrl
 	} else {
-		deadQueueName = *queue.QueueUrl
+		DEADQUEUE = *queue.QueueUrl
 	}
 }
 
 func sendMessage(data string) {
 
-	_, err := sqsClient.SendMessage(&sqs.SendMessageInput{
+	_, err := sqsClient.SendMessage(context.TODO(), &sqs.SendMessageInput{
 		MessageBody: aws.String(data),
-		QueueUrl:    aws.String(deadQueueName),
+		QueueUrl:    aws.String(DEADQUEUE),
 	})
 
 	checkError("Send Msg", err)
@@ -57,8 +101,8 @@ func sendMessage(data string) {
 
 func deleteMessage(msgHandle *string) {
 
-	_, err := sqsClient.DeleteMessage(&sqs.DeleteMessageInput{
-		QueueUrl:      aws.String(deadQueueName),
+	_, err := sqsClient.DeleteMessage(context.TODO(), &sqs.DeleteMessageInput{
+		QueueUrl:      aws.String(DEADQUEUE),
 		ReceiptHandle: msgHandle,
 	})
 
