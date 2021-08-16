@@ -28,3 +28,4 @@ Kowl: http://0.0.0.0:8088
 # Links
 
 https://github.com/confluentinc/confluent-kafka-go
+https://github.com/cloudhut/kowl
